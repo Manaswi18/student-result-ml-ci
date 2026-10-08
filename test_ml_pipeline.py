@@ -48,7 +48,11 @@ class TestMLPipeline(unittest.TestCase):
             "previous_score": 80
         }])
 
-  self.assertEqual(int(prediction), 1)
+  # Original
+self.assertEqual(int(prediction), 1)
+
+# Temporary failure condition
+self.assertEqual(int(prediction), 0)
 
     def test_low_performance_student(self):
         model = joblib.load("student_result_model.pkl")
