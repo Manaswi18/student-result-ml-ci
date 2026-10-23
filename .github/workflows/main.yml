@@ -1,6 +1,6 @@
 
-     - name: Train student result model
-       run: python train_model.py
+      - name: Train student result model
+        run: python train_model.py
 
       - name: Check ML quality gate
         run: python quality_gate.py
