@@ -1,13 +1,11 @@
 
-name: Student Result Prediction ML CI Pipeline
+name: Student Result ML CI-CD
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
   pull_request:
-    branches:
-      - main
+    branches: [main]
   workflow_dispatch:
 
 jobs:
@@ -15,46 +13,95 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # Step 1: Get repository code
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # Step 2: Set up Python
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
+      # Step 3: Install dependencies
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+          pip install pytest
 
+      # Step 4: Train ML model
       - name: Train ML model
         run: python train_model.py
 
-      - name: Test ML pipeline
-        run: python test_ml_pipeline.py
+      # Step 5: Run ML pipeline tests
+      - name: Run ML tests
+        run: pytest test_ml_pipeline.py -v
 
+      # Step 6: Run application tests
+      - name: Run application tests
+        run: pytest test_app.py -v
+
+      # Step 7: Run quality gate
       - name: Run quality gate
         run: python quality_gate.py
 
-      - name: Test Flask application
-        run: python test_app.py
-
-      - name: Prepare release candidate
+      # Step 8: Verify Docker files and model artifacts
+      - name: Verify required files
         run: |
-          mkdir -p release_candidate
-          cp app.py release_candidate/
-          cp student_result_model.pkl release_candidate/
-          cp metrics.json release_candidate/
-          cp requirements.txt release_candidate/
-          cp Dockerfile release_candidate/
-          cp .dockerignore release_candidate/
-          printf "Student Result Prediction ML Application\nRun: python app.py\nEndpoint: POST /predict\n" > release_candidate/DEPLOYMENT.txt
+          test -f Dockerfile
+          test -f .dockerignore
+          test -f app.py
+          test -f requirements.txt
+          test -f student_result_model.pkl
+          test -f metrics.json
 
-      - name: Upload release candidate
-        uses: actions/upload-artifact@v4
-        with:
-          name: student-result-ml-release
-          path: release_candidate/
-          if-no-files-found: error
-          retention-days: 7
+      # Step 9: Build Docker image
+      - name: Build Docker image
+        run: docker build -t student-result-ml:${{ github.sha }} .
+
+      # Step 10: Run Docker container
+      - name: Run Docker container
+        run: |
+          docker run -d \
+            --name student-result-ml-container \
+            -p 5000:5000 \
+            student-result-ml:${{ github.sha }}
+
+      # Step 11: Check application health
+      - name: Wait for application to become ready
+        run: |
+          for i in {1..15}; do
+            if curl --fail --silent http://localhost:5000/health; then
+              echo "Application is ready."
+              exit 0
+            fi
+            echo "Waiting for application... attempt $i"
+            sleep 2
+          done
+
+          echo "Application did not become ready."
+          docker logs student-result-ml-container
+          exit 1
+
+      # Step 12: Test prediction endpoint
+      - name: Test prediction endpoint
+        run: |
+          response=$(curl --fail --silent --show-error \
+            -X POST \
+            -H "Content-Type: application/json" \
+            -d '{"attendance":90,"internal_marks":85,"assignment_marks":88,"previous_score":80}' \
+            http://localhost:5000/predict)
+
+          echo "Prediction response: $response"
+          echo "$response" | grep -q '"prediction"'
+
+      # Step 13: Display Docker logs
+      - name: Show Docker container logs
+        if: always()
+        run: docker logs student-result-ml-container || true
+
+      # Step 14: Stop and remove container
+      - name: Stop and remove Docker container
+        if: always()
+        run: docker rm -f student-result-ml-container || true
