@@ -1,3 +1,4 @@
+
 from pathlib import Path
 import joblib
 import pandas as pd
@@ -14,6 +15,7 @@ FEATURES = [
     "previous_score"
 ]
 
+
 def load_model():
     if not MODEL_PATH.exists():
         raise FileNotFoundError(
@@ -23,6 +25,7 @@ def load_model():
     return joblib.load(MODEL_PATH)
 
 
+# Home route
 @app.get("/")
 def health_check():
     return jsonify({
@@ -31,12 +34,24 @@ def health_check():
     })
 
 
+# Health check route for GitHub Actions
+@app.get("/health")
+def health():
+    return jsonify({
+        "status": "healthy",
+        "service": "student-result-prediction"
+    }), 200
+
+
+# Prediction route
 @app.post("/predict")
 def predict():
     data = request.get_json(silent=True)
 
     if not data:
-        return jsonify({"error": "JSON request body is required"}), 400
+        return jsonify({
+            "error": "JSON request body is required"
+        }), 400
 
     missing_fields = [
         feature for feature in FEATURES
@@ -55,7 +70,9 @@ def predict():
     }])
 
     model = load_model()
+
     prediction_code = int(model.predict(sample)[0])
+
     prediction = "PASS" if prediction_code == 1 else "FAIL"
 
     return jsonify({
@@ -64,5 +81,6 @@ def predict():
     })
 
 
+# Run Flask application
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
