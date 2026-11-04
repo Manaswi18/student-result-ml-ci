@@ -1,13 +1,15 @@
 
-from pathlib import Path
+from flask import Flask, request, jsonify
 import joblib
-import pandas as pd
-from flask import Flask, jsonify, request
+from pathlib import Path
 
 app = Flask(__name__)
 
+# Load trained model
 MODEL_PATH = Path("student_result_model.pkl")
+model = joblib.load(MODEL_PATH)
 
+# Input features
 FEATURES = [
     "attendance",
     "internal_marks",
@@ -16,26 +18,17 @@ FEATURES = [
 ]
 
 
-def load_model():
-    if not MODEL_PATH.exists():
-        raise FileNotFoundError(
-            "student_result_model.pkl was not found. "
-            "Run the training pipeline first."
-        )
-    return joblib.load(MODEL_PATH)
-
-
-# Home route
-@app.get("/")
-def health_check():
+# Home endpoint
+@app.route("/", methods=["GET"])
+def home():
     return jsonify({
-        "status": "ok",
-        "service": "student-result-prediction"
-    })
+        "message": "Student Result Prediction API is running",
+        "status": "success"
+    }), 200
 
 
-# Health check route for GitHub Actions
-@app.get("/health")
+# Health check endpoint
+@app.route("/health", methods=["GET"])
 def health():
     return jsonify({
         "status": "healthy",
@@ -43,44 +36,58 @@ def health():
     }), 200
 
 
-# Prediction route
-@app.post("/predict")
+# Prediction endpoint
+@app.route("/predict", methods=["POST"])
 def predict():
-    data = request.get_json(silent=True)
+    try:
+        data = request.get_json()
 
-    if not data:
+        if not data:
+            return jsonify({
+                "error": "Please provide JSON input"
+            }), 400
+
+        # Check required features
+        missing_features = [
+            feature for feature in FEATURES
+            if feature not in data
+        ]
+
+        if missing_features:
+            return jsonify({
+                "error": "Missing required features",
+                "missing_features": missing_features
+            }), 400
+
+        # Prepare input data
+        input_data = [[
+            float(data[feature])
+            for feature in FEATURES
+        ]]
+
+        # Make prediction
+        prediction = model.predict(input_data)[0]
+
+        # Convert prediction to PASS or FAIL
+        prediction_code = int(prediction)
+
+        result = "PASS" if prediction_code == 1 else "FAIL"
+
         return jsonify({
-            "error": "JSON request body is required"
+            "prediction": result,
+            "prediction_code": prediction_code
+        }), 200
+
+    except ValueError:
+        return jsonify({
+            "error": "Feature values must be numeric"
         }), 400
 
-    missing_fields = [
-        feature for feature in FEATURES
-        if feature not in data
-    ]
-
-    if missing_fields:
+    except Exception as e:
         return jsonify({
-            "error": "Missing required fields",
-            "missing_fields": missing_fields
-        }), 400
-
-    sample = pd.DataFrame([{
-        feature: data[feature]
-        for feature in FEATURES
-    }])
-
-    model = load_model()
-
-    prediction_code = int(model.predict(sample)[0])
-
-    prediction = "PASS" if prediction_code == 1 else "FAIL"
-
-    return jsonify({
-        "prediction": prediction,
-        "prediction_code": prediction_code
-    })
+            "error": str(e)
+        }), 500
 
 
-# Run Flask application
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
+    app.run(host="0.0.0.0", port=5000, debug=False)
