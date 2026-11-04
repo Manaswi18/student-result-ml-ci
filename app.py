@@ -23,7 +23,7 @@ FEATURES = [
 def home():
     return jsonify({
         "message": "Student Result Prediction API is running",
-        "status": "success"
+        "status": "ok"
     }), 200
 
 
@@ -64,9 +64,8 @@ def predict():
             for feature in FEATURES
         ]]
 
-        # Predict student result
+        # Make prediction
         prediction = model.predict(input_data)[0]
-
         prediction_code = int(prediction)
 
         result = "PASS" if prediction_code == 1 else "FAIL"
